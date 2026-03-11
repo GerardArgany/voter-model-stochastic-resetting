@@ -1,5 +1,7 @@
+#Workspace files
 voter-model-stochastic-resetting.sublime-project
 voter-model-stochastic-resetting.sublime-workspace
+voter-model-stochastic-resetting.code-workspace
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

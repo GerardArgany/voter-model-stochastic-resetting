@@ -1,0 +1,61 @@
+# =============================================================================
+# VoterResetting.jl  —  top-level Julia module
+# =============================================================================
+#
+# This is the single entry-point for the whole Julia implementation.
+# Load it from a notebook with:
+#
+#   include(joinpath(dirname(pwd()), "src", "VoterResetting.jl"))
+#   using .VoterResetting
+#
+# The module is split across three source files that are included in order:
+#
+#   common/simulation_core.jl
+#       Shared types (parameter structs, reset-protocol types, result container),
+#       shared maths helpers (magnetization ↔ count conversions), and the shared
+#       Monte Carlo sampling + PDF estimation machinery used by both topologies.
+#
+#   all_to_all/pdf_simulation.jl
+#       Gillespie simulation of the voter model on the complete graph (all-to-all
+#       coupling) under any resetting protocol.  Produces PDFs of the global
+#       magnetization m(t) via repeated independent trajectories.
+#
+#   complex/pdf_simulation.jl
+#       Gillespie simulation on an arbitrary sparse graph (Graphs.jl
+#       AbstractGraph).  Uses an active-edge list for O(degree) updates per voter
+#       flip instead of rescanning all edges.  Produces PDFs of m(t) in the same
+#       format as the all-to-all case.
+#
+# =============================================================================
+module VoterResetting
+
+using Graphs      # AbstractGraph, nv, ne, edges, src, dst, degree, etc.
+using Random      # rand, randperm
+using Statistics  # mean, std
+
+# ---- public API --------------------------------------------------------------
+# Types the caller needs for constructing inputs and reading outputs
+export AbstractResetProtocol
+export AllToAllParams, ComplexParams, PDFSimulationResult, FPTSimulationResult
+
+# Constructors for the supported resetting protocols
+export delta_reset, uniform_reset, random_node_reset, hub_reset, custom_reset
+
+# Utility: compute a PDF from a plain vector of magnetization samples
+export magnetization_pdf
+
+# Main simulation functions, one per topology
+# PDF (probability density at fixed times)
+export simulate_pdf_all_to_all, simulate_pdf_complex
+
+# FPT (first passage time to consensus)
+export first_passage_time_all_to_all, first_passage_time_complex
+# ------------------------------------------------------------------------------
+
+include("common/simulation_core.jl")
+include("all_to_all/pdf_simulation.jl")
+include("all_to_all/fpt_simulation.jl")
+include("complex/pdf_simulation.jl")
+include("complex/fpt_simulation.jl")
+
+end
