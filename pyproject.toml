@@ -1,0 +1,65 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "voter-model-stochastic-resetting"
+version = "0.1.0"
+description = "Simulations and theoretical solutions for the voter model with stochastic resetting"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "Gerard Argany", email = "gerardargany@gmail.com"}
+]
+keywords = ["voter-model", "stochastic-resetting", "Monte-Carlo", "simulation"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+
+dependencies = [
+    "numpy>=1.19.0",
+    "scipy>=1.5.0",
+    "matplotlib>=3.3.0",
+    "networkx>=2.5",
+    "numba>=0.51.0",
+    "jupyter>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0",
+    "pytest-cov>=2.10.0",
+    "black>=21.0",
+    "flake8>=3.9.0",
+    "isort>=5.9.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/GerardArgany/voter-model-stochastic-resetting"
+Repository = "https://github.com/GerardArgany/voter-model-stochastic-resetting.git"
+Documentation = "https://github.com/GerardArgany/voter-model-stochastic-resetting"
+"Bug Tracker" = "https://github.com/GerardArgany/voter-model-stochastic-resetting/issues"
+
+[tool.setuptools]
+packages = ["voter_model"]
+
+[tool.black]
+line-length = 100
+target-version = ['py38']
+
+[tool.isort]
+profile = "black"
+line_length = 100
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
