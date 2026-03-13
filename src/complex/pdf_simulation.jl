@@ -382,7 +382,8 @@ function simulate_complex_trajectory(graph::AbstractGraph,
     active_list = active_edge_ids_from_state(cache, state)
     # pos_map maps every edge id to its current position in active_list (0 = absent)
     pos_map = zeros(Int, ne(graph))
-    rebuild_active_structures!(active_list, pos_map, active_list)
+    initial_active = copy(active_list)
+    rebuild_active_structures!(active_list, pos_map, initial_active)
 
     # If the protocol has a fixed reset target, precompute it now
     cached_plan = fixed_reset_plan(cache, reset, params)

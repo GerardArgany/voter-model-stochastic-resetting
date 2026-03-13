@@ -37,6 +37,11 @@ using Statistics  # mean, std
 # Types the caller needs for constructing inputs and reading outputs
 export AbstractResetProtocol
 export AllToAllParams, ComplexParams, PDFSimulationResult, FPTSimulationResult
+export DegreePairEvolutionResult, DegreeGridEvolutionResult
+export AMESteadyStateResult, AMEEvolutionResult
+
+# AME (Approximate Master Equation) numerical solver
+export solve_ame_evolution, solve_ame_steady_state
 
 # Constructors for the supported resetting protocols
 export delta_reset, uniform_reset, random_node_reset, hub_reset, custom_reset
@@ -47,6 +52,7 @@ export magnetization_pdf
 # Main simulation functions, one per topology
 # PDF (probability density at fixed times)
 export simulate_pdf_all_to_all, simulate_pdf_complex
+export simulate_degree_evolution_complex, simulate_sikm_pair_complex
 
 # FPT (first passage time to consensus)
 export first_passage_time_all_to_all, first_passage_time_complex
@@ -56,6 +62,8 @@ include("common/simulation_core.jl")
 include("all_to_all/pdf_simulation.jl")
 include("all_to_all/fpt_simulation.jl")
 include("complex/pdf_simulation.jl")
+include("complex/sikm_simulation.jl")
 include("complex/fpt_simulation.jl")
+include("complex/ame_solution.jl")
 
 end

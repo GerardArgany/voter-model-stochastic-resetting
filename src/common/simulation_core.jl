@@ -120,6 +120,58 @@ struct FPTSimulationResult
     std_fpt::Float64
 end
 
+# DegreePairEvolutionResult stores ensemble-averaged time evolution for one
+# selected (k, m) pair on a complex graph:
+#   s_values[t] = s_{k,m}(t), fraction of all nodes that have degree k,
+#                 are in state -1, and have m neighbors in state +1.
+#   i_values[t] = i_{k,m}(t), same but node state +1.
+struct DegreePairEvolutionResult
+    times::Vector{Float64}
+    k::Int
+    m::Int
+    s_values::Vector{Float64}
+    i_values::Vector{Float64}
+    nsamples::Int
+end
+
+# DegreeGridEvolutionResult stores ensemble-averaged time evolution for all
+# observed degree classes and all valid neighbor counts m = 0...k.
+#
+# k_values defines the degree-class ordering. For each index j:
+#   s_values[j] is a Matrix{Float64} of size (ntimes, k_values[j]+1), where
+#   s_values[j][t, m+1] = s_{k,m}(t).
+#   i_values[j] is the analogous matrix for i_{k,m}(t).
+struct DegreeGridEvolutionResult
+    times::Vector{Float64}
+    k_values::Vector{Int}
+    s_values::Vector{Matrix{Float64}}
+    i_values::Vector{Matrix{Float64}}
+    nsamples::Int
+end
+
+# AMESteadyStateResult: fixed-point s_{k,m}* and i_{k,m}* from the AME equations
+# (d/dt = 0 solution). s_values[j][m+1] = s_{k_j, m} at steady state.
+struct AMESteadyStateResult
+    k_values::Vector{Int}
+    s_values::Vector{Vector{Float64}}
+    i_values::Vector{Vector{Float64}}
+    Pk::Dict{Int,Float64}
+    rho0::Float64
+    r::Float64
+end
+
+# AMEEvolutionResult: time-dependent s_{k,m}(t) and i_{k,m}(t) from the AME ODE.
+# s_values[j] is a (ntimes × k_j+1) Matrix where s_values[j][t, m+1] = s_{k_j, m}(t).
+struct AMEEvolutionResult
+    times::Vector{Float64}
+    k_values::Vector{Int}
+    s_values::Vector{Matrix{Float64}}
+    i_values::Vector{Matrix{Float64}}
+    Pk::Dict{Int,Float64}
+    rho0::Float64
+    r::Float64
+end
+
 
 # -----------------------------------------------------------------------------
 # Section 4 – Resetting-protocol concrete types
