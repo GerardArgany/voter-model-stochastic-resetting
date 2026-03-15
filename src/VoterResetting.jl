@@ -56,11 +56,16 @@ export simulate_degree_evolution_complex, simulate_sikm_pair_complex
 
 # FPT (first passage time to consensus)
 export first_passage_time_all_to_all, first_passage_time_complex
+
+# Analytical all-to-all theory (analogous to Python voter_model package)
+export dist_laplace, sol_fpt, mean_fpt, variance_fpt
+export pip1, pim1, fk, sol
 # ------------------------------------------------------------------------------
 
 include("common/simulation_core.jl")
 include("all_to_all/pdf_simulation.jl")
 include("all_to_all/fpt_simulation.jl")
+include("all_to_all/theory_solution.jl")
 include("complex/pdf_simulation.jl")
 include("complex/sikm_simulation.jl")
 include("complex/fpt_simulation.jl")

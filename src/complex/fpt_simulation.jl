@@ -56,19 +56,29 @@ function first_passage_time_complex(
     N = nv(graph)
     M = ne(graph)
 
-    # Build adjacency structure once (reuse for all samples)
-    adj_list = [Int[] for _ in 1:N]
+    # Build edge-indexed adjacency once (reuse for all samples).
+    # This supports O(degree) active-edge updates after a single-node flip.
+    edges_u = Vector{Int}(undef, M)
+    edges_v = Vector{Int}(undef, M)
+    incident_edge_ids = [Int[] for _ in 1:N]
+
+    edge_id = 0
     for edge in edges(graph)
+        edge_id += 1
         u, v = src(edge), dst(edge)
-        push!(adj_list[u], v)
-        push!(adj_list[v], u)
+        edges_u[edge_id] = u
+        edges_v[edge_id] = v
+        push!(incident_edge_ids[u], edge_id)
+        push!(incident_edge_ids[v], edge_id)
     end
 
     # Run nsamples independent simulations
     times = [simulate_fpt_complex_trajectory(
         N,
         M,
-        adj_list,
+        edges_u,
+        edges_v,
+        incident_edge_ids,
         params.r,
         params.m0,
         reset,
@@ -113,7 +123,9 @@ Alternatively, can stop when all nodes have the same state (consensus verificati
 function simulate_fpt_complex_trajectory(
     N::Int,
     M::Int,
-    adj_list::Vector{Vector{Int}},
+    edges_u::Vector{Int},
+    edges_v::Vector{Int},
+    incident_edge_ids::Vector{Vector{Int}},
     r::Float64,
     m0::Float64,
     reset_protocol::AbstractResetProtocol,
@@ -122,43 +134,80 @@ function simulate_fpt_complex_trajectory(
     # Initialize random spin state
     p_plus = (1 + m0) / 2
     state = Int8[rand() < p_plus ? Int8(1) : Int8(-1) for _ in 1:N]
+    plus_count = count(==(Int8(1)), state)
 
     t = 0.0
 
-    # Pre-compute reset state
-    reset_state, reset_active_count = compute_reset_state(N, m0, state, adj_list, reset_protocol)
+    # Active-edge tracking structures
+    active_edges = Int[]
+    pos_map = zeros(Int, M)  # pos_map[eid] == 0 means inactive; otherwise index in active_edges
 
-    # Function to count active edges (edges between different-state nodes)
-    function count_active_edges()
-        count = 0
-        for i in 1:N
-            for j in adj_list[i]
-                if i < j && state[i] != state[j]
-                    count += 1
-                end
-            end
+    for eid in 1:M
+        if state[edges_u[eid]] != state[edges_v[eid]]
+            push!(active_edges, eid)
+            pos_map[eid] = length(active_edges)
         end
-        return count
+    end
+
+    # Pre-compute reset state and reset active edges
+    reset_state, reset_active_edges, reset_plus_count = compute_reset_state(
+        N, m0, state, edges_u, edges_v, incident_edge_ids, reset_protocol)
+
+    function rebuild_pos_map!(pos_map::Vector{Int}, active_edges::Vector{Int})
+        fill!(pos_map, 0)
+        for (idx, eid) in enumerate(active_edges)
+            pos_map[eid] = idx
+        end
+        return nothing
+    end
+
+    function remove_active_edge!(active_edges::Vector{Int}, pos_map::Vector{Int}, eid::Int)
+        pos = pos_map[eid]
+        pos == 0 && return
+        last_eid = active_edges[end]
+        active_edges[pos] = last_eid
+        pos_map[last_eid] = pos
+        pop!(active_edges)
+        pos_map[eid] = 0
+        return nothing
+    end
+
+    function add_active_edge!(active_edges::Vector{Int}, pos_map::Vector{Int}, eid::Int)
+        pos_map[eid] != 0 && return
+        push!(active_edges, eid)
+        pos_map[eid] = length(active_edges)
+        return nothing
+    end
+
+    function update_edge_activity!(active_edges::Vector{Int}, pos_map::Vector{Int}, eid::Int)
+        is_active = pos_map[eid] != 0
+        should_be_active = state[edges_u[eid]] != state[edges_v[eid]]
+
+        if is_active && !should_be_active
+            remove_active_edge!(active_edges, pos_map, eid)
+        elseif !is_active && should_be_active
+            add_active_edge!(active_edges, pos_map, eid)
+        end
+        return nothing
     end
 
     # Evolution loop
     while true
-        # Count current active edges
-        num_active = count_active_edges()
+        num_active = length(active_edges)
         
         # Check stopping conditions
-        if consensus_type == :positive && all(s == Int8(1) for s in state)
+        if consensus_type == :positive && plus_count == N
             return t
-        elseif consensus_type == :negative && all(s == Int8(-1) for s in state)
+        elseif consensus_type == :negative && plus_count == 0
             return t
         elseif consensus_type == :either && num_active == 0
             return t
         end
 
         # Gillespie rate: λ = (voter rate) + (reset rate)
-        #   Voter rate = 2 * num_active  (each active edge can flip either endpoint)
-        #   Reset rate = r
-        λ = 2.0 * num_active + r
+        #   Voter rate = 2 * num_active  (system-level, O(N))
+        #   Reset rate = r / N           (AME-style user-facing r converted internally)
+        λ = 2.0 * num_active + r / N
 
         if λ <= 0
             return t  # Safety check (shouldn't happen if num_active > 0)
@@ -171,29 +220,34 @@ function simulate_fpt_complex_trajectory(
         # Which event?
         if rand() * λ < 2.0 * num_active
             # === VOTER EVENT ===
-            # Pick a random active edge and flip one endpoint
-            # Collect all active edges
-            active_edges = Tuple{Int,Int}[]
-            for i in 1:N
-                for j in adj_list[i]
-                    if i < j && state[i] != state[j]
-                        push!(active_edges, (i, j))
-                    end
-                end
-            end
-            
-            # Randomly choose one active edge
-            (u, v) = active_edges[rand(1:length(active_edges))]
+            # Randomly choose one currently active edge.
+            chosen_eid = active_edges[rand(1:num_active)]
+            u = edges_u[chosen_eid]
+            v = edges_v[chosen_eid]
             
             # Randomly choose which endpoint to flip
             node_to_flip = rand() < 0.5 ? u : v
             
             # Flip the node
-            state[node_to_flip] *= -1
+            old_state = state[node_to_flip]
+            state[node_to_flip] = Int8(-old_state)
+            if old_state == Int8(1)
+                plus_count -= 1
+            else
+                plus_count += 1
+            end
+
+            # Only incident edges can change active/inactive status.
+            for eid in incident_edge_ids[node_to_flip]
+                update_edge_activity!(active_edges, pos_map, eid)
+            end
             
         else
             # === RESET EVENT ===
             state .= reset_state
+            plus_count = reset_plus_count
+            active_edges = copy(reset_active_edges)
+            rebuild_pos_map!(pos_map, active_edges)
         end
     end
 end
@@ -209,7 +263,9 @@ function compute_reset_state(
     N::Int,
     m0::Float64,
     current_state::Vector{Int8},
-    adj_list::Vector{Vector{Int}},
+    edges_u::Vector{Int},
+    edges_v::Vector{Int},
+    incident_edge_ids::Vector{Vector{Int}},
     reset_protocol::AbstractResetProtocol
 )
     reset_state = similar(current_state)
@@ -232,7 +288,7 @@ function compute_reset_state(
         end
     elseif reset_protocol isa HubReset
         # Highest (or lowest) degree nodes set to +1
-        degrees = [length(adj_list[i]) for i in 1:N]
+        degrees = [length(incident_edge_ids[i]) for i in 1:N]
         node_order = sortperm(degrees; rev=reset_protocol.highest_first)
         n_plus = Int(round(N * (1 + reset_protocol.target_magnetization) / 2))
         fill!(reset_state, Int8(-1))
@@ -245,15 +301,16 @@ function compute_reset_state(
         reset_state = Int8[rand() < p ? Int8(1) : Int8(-1) for _ in 1:N]
     end
     
-    # Count active edges in reset state
-    reset_active_count = 0
-    for i in 1:N
-        for j in adj_list[i]
-            if i < j && reset_state[i] != reset_state[j]
-                reset_active_count += 1
-            end
+    # Build active-edge list in reset state
+    reset_active_edges = Int[]
+    M = length(edges_u)
+    for eid in 1:M
+        if reset_state[edges_u[eid]] != reset_state[edges_v[eid]]
+            push!(reset_active_edges, eid)
         end
     end
+
+    reset_plus_count = count(==(Int8(1)), reset_state)
     
-    return reset_state, reset_active_count
+    return reset_state, reset_active_edges, reset_plus_count
 end

@@ -375,8 +375,9 @@ end
 function simulate_complex_trajectory(graph::AbstractGraph,
         cache::ComplexGraphCache, params::ComplexParams, sorted_times::AbstractVector{<:Real};
         reset::AbstractResetProtocol)
+    N = nv(graph)
     # Initial condition: random assignment with expected magnetization params.m0
-    state = random_spin_state(nv(graph), params.m0)
+    state = random_spin_state(N, params.m0)
 
     # Build the initial active-edge list by scanning all edges once
     active_list = active_edge_ids_from_state(cache, state)
@@ -398,7 +399,10 @@ function simulate_complex_trajectory(graph::AbstractGraph,
         while current_time < target_time
             # Total rate:  w (voter) + r (resetting)
             voter_rate = 2.0 * length(active_list)  # 2× because each active edge counts both nodes
-            total_rate = voter_rate + params.r
+            # Match AME-style scaling: user-facing r is O(1), while this
+            # trajectory uses system-level voter rate O(N), so reset hazard is r/N.
+            reset_rate = params.r / N
+            total_rate = voter_rate + reset_rate
 
             # Nothing can happen if there are no active edges and r = 0
             total_rate > 0 || break
@@ -432,7 +436,7 @@ function simulate_complex_trajectory(graph::AbstractGraph,
         end
 
         # Record the global magnetization: sum of all states divided by N
-        trajectory[time_index] = sum(state) / nv(graph)
+        trajectory[time_index] = sum(state) / N
     end
 
     return trajectory

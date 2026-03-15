@@ -356,7 +356,8 @@ function solve_ame_evolution(Pk::Dict{Int,Float64}, rho0::Real, r::Real,
         times;
         initial_condition::Symbol = :rho,
         reset::Union{Nothing,AbstractResetProtocol} = nothing,
-        reltol = 1e-8, abstol = 1e-8)
+    reltol = 1e-8, abstol = 1e-8,
+    maxiters::Int = 10_000_000)
     rho0_f = _resolve_initial_density(rho0, initial_condition)
     r_f    = Float64(r)
     r_f >= 0.0               || throw(ArgumentError("r must be non-negative."))
@@ -375,9 +376,15 @@ function solve_ame_evolution(Pk::Dict{Int,Float64}, rho0::Real, r::Real,
 
     prob = ODEProblem(_ame_rhs!, x0, (0.0, times_sorted[end]), p)
     sol  = solve(prob, Tsit5(); reltol = reltol, abstol = abstol,
-                 saveat = times_sorted)
+                 saveat = times_sorted, maxiters = maxiters)
 
     ntimes = length(times_sorted)
+    length(sol.u) == ntimes ||
+        throw(ErrorException(
+            "AME evolution did not return all requested time points " *
+            "($(length(sol.u)) of $(ntimes)); retcode=$(sol.retcode). " *
+            "Try a smaller time horizon or increase maxiters."
+        ))
     s_out  = [Matrix{Float64}(undef, ntimes, k + 1) for k in ind.k_vals]
     i_out  = [Matrix{Float64}(undef, ntimes, k + 1) for k in ind.k_vals]
     for t_idx in 1:ntimes
@@ -398,11 +405,13 @@ function solve_ame_evolution(graph::AbstractGraph, rho0::Real, r::Real,
         times;
     initial_condition::Symbol = :rho,
     reset::Union{Nothing,AbstractResetProtocol} = nothing,
-        reltol = 1e-8, abstol = 1e-8)
+        reltol = 1e-8, abstol = 1e-8,
+        maxiters::Int = 10_000_000)
     return solve_ame_evolution(_pk_from_graph(graph), rho0, r, times;
                    initial_condition = initial_condition,
                    reset = reset,
-                   reltol = reltol, abstol = abstol)
+                   reltol = reltol, abstol = abstol,
+                   maxiters = maxiters)
 end
 
 

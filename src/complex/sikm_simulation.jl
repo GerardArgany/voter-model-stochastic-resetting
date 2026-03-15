@@ -37,7 +37,8 @@ function simulate_complex_state_snapshots(graph::AbstractGraph,
         cache::ComplexGraphCache, params::ComplexParams,
         sorted_times::AbstractVector{<:Real};
         reset::AbstractResetProtocol)
-    state       = random_spin_state(nv(graph), params.m0)
+    N           = nv(graph)
+    state       = random_spin_state(N, params.m0)
     active_list = active_edge_ids_from_state(cache, state)
     pos_map     = zeros(Int, ne(graph))
     initial_active = copy(active_list)
@@ -52,7 +53,9 @@ function simulate_complex_state_snapshots(graph::AbstractGraph,
 
         while current_time < target_time
             voter_rate = 2.0 * length(active_list)
-            total_rate = voter_rate + params.r
+            # Keep the same rate convention as simulate_complex_trajectory.
+            reset_rate = params.r / N
+            total_rate = voter_rate + reset_rate
             total_rate > 0 || break
 
             dt = -log(rand()) / total_rate
