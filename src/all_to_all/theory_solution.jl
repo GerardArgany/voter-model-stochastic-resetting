@@ -183,6 +183,13 @@ end
 
 Analytical mean first-passage time to consensus.
 Mirrors Python behavior and uses internal `r/N` scaling.
+
+Equivalent computation form used here:
+
+    MFPT(r) = [sum_l B_{2l}/(r + lambda'_{2l+1})]
+              / [sum_l B_{2l} lambda'_{2l+1}/(r + lambda'_{2l+1})]
+
+with internal substitution `r -> r/N`.
 """
 function mean_fpt(N::Int, m0::Real, r::Real; M::Int=1000)
     m0f = Float64(m0)

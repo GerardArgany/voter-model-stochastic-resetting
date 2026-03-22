@@ -87,8 +87,12 @@ def sol_fpt(N: int, m0: float, r: float, s_vals: np.ndarray, M: int = 1000) -> l
 def mean_fpt(N: int, m0: float, r: float, M: int = 1000) -> float:
     """Compute the mean first passage time to consensus.
 
-    Uses an algebraic simplification based on a Gegenbauer identity to avoid
-    a numerical derivative of the Laplace transform.
+    Uses the equivalent ratio-of-sums form:
+
+        MFPT(r) = [sum_l B_{2l}/(r + lambda'_{2l+1})]
+                  / [sum_l B_{2l} lambda'_{2l+1}/(r + lambda'_{2l+1})]
+
+    with the internal convention r -> r/N.
 
     Args:
         N: System size (number of agents).

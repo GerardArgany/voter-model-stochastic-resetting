@@ -210,7 +210,16 @@ function simulate_fpt_complex_trajectory(
         λ = 2.0 * num_active + r / N
 
         if λ <= 0
-            return t  # Safety check (shouldn't happen if num_active > 0)
+            # At zero total rate, the process is frozen. For one-sided targets,
+            # reaching the opposite absorbing state means the requested FPT is not
+            # attained (infinite in the unconditional sense).
+            if consensus_type == :either
+                return t
+            elseif consensus_type == :positive
+                return plus_count == N ? t : Inf
+            else # consensus_type == :negative
+                return plus_count == 0 ? t : Inf
+            end
         end
 
         # Time to next event
@@ -244,6 +253,18 @@ function simulate_fpt_complex_trajectory(
             
         else
             # === RESET EVENT ===
+            if reset_protocol isa UniformMagnetizationReset
+                # Uniform reset must redraw the target magnetization at every reset event.
+                reset_state, reset_active_edges, reset_plus_count = compute_reset_state(
+                    N,
+                    m0,
+                    state,
+                    edges_u,
+                    edges_v,
+                    incident_edge_ids,
+                    reset_protocol,
+                )
+            end
             state .= reset_state
             plus_count = reset_plus_count
             active_edges = copy(reset_active_edges)
@@ -285,6 +306,17 @@ function compute_reset_state(
         p = (1 + reset_protocol.target_magnetization) / 2
         for i in 1:N
             reset_state[i] = rand() < p ? Int8(1) : Int8(-1)
+        end
+    elseif reset_protocol isa UniformMagnetizationReset
+        # Draw target magnetization uniformly over the discrete grid m = 2n/N - 1,
+        # i.e. sample n_+ uniformly from {0, 1, ..., N} at each reset.
+        n_plus = rand(0:N)
+        fill!(reset_state, Int8(-1))
+        if n_plus > 0
+            node_order = randperm(N)
+            for i in 1:n_plus
+                reset_state[node_order[i]] = Int8(1)
+            end
         end
     elseif reset_protocol isa HubReset
         # Highest (or lowest) degree nodes set to +1
