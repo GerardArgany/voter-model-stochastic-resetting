@@ -35,7 +35,7 @@ def la(n: int, N: int) -> float:
     Returns:
         Relaxation rate lambda_n = n(n+1)/N.
     """
-    return n * (n + 1) / N
+    return n * (n + 1)
 
 
 def dist_laplace(N: int, m0: float, r: float, s: float, M: int = 1000) -> float:

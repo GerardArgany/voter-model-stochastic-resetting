@@ -225,7 +225,7 @@ def main() -> None:
 
     # r-grid shown on the x-axis. Keep r > 0 for log-scale x-axis.
     r_min = 1e-3
-    r_max = 50
+    r_max = N
     nr = 140
     r_values = np.linspace(r_min, r_max, nr)
     nr_map = 480
