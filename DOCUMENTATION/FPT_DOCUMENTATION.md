@@ -150,7 +150,9 @@ The `reset` keyword argument accepts any `AbstractResetProtocol`:
 - **`hub_reset(m0)`**: Reset to configuration where highest-degree nodes are +1 (m0 controls the fraction)
 - **`custom_reset(f)`**: User-defined reset function
 
-Default: `reset=delta_reset(params.m0)` (reset to initial magnetization)
+Defaults are topology-specific:
+- `first_passage_time_all_to_all`: `reset=delta_reset(params.m0)`
+- `first_passage_time_complex`: `reset=hub_reset(0.0)`
 
 ### Other Parameters
 

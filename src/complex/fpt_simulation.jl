@@ -292,11 +292,14 @@ function compute_reset_state(
     reset_state = similar(current_state)
     
     if reset_protocol isa DeltaReset
-        # All nodes set to match a fixed magnetization
+        # Fixed magnetization with randomized node identities at each reset
         n_plus = Int(round(N * (1 + reset_protocol.target_magnetization) / 2))
         fill!(reset_state, Int8(-1))
-        for i in 1:n_plus
-            reset_state[i] = Int8(1)
+        if n_plus > 0
+            node_order = randperm(N)
+            for i in 1:n_plus
+                reset_state[node_order[i]] = Int8(1)
+            end
         end
     elseif reset_protocol isa StateVectorReset
         # Use explicit state vector

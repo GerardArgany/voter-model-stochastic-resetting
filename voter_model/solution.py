@@ -32,9 +32,9 @@ def la(n: int, N: int) -> float:
         N: System size (number of agents).
 
     Returns:
-        Relaxation rate lambda_n = n(n+1)/N.
+        Relaxation rate lambda_n = 2n(n+1)/N.
     """
-    return n * (n + 1) / N
+    return 2 * n * (n + 1) / N
 
 
 def kernel(n: int, N: int, r: float, t: float) -> float:

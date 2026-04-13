@@ -33,9 +33,9 @@ def la(n: int, N: int) -> float:
         N: System size (number of agents).
 
     Returns:
-        Relaxation rate lambda_n = n(n+1)/N.
+        Relaxation rate lambda_n = 2n(n+1).
     """
-    return n * (n + 1)
+    return 2 * n * (n + 1)
 
 
 def dist_laplace(N: int, m0: float, r: float, s: float, M: int = 1000) -> float:

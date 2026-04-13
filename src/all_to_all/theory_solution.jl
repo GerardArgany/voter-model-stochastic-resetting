@@ -49,9 +49,9 @@ end
 """
     la(n, N)
 
-Relaxation rate `lambda_n = n(n+1)/N`.
+Relaxation rate `lambda_n = 2n(n+1)/N`.
 """
-la(n::Int, N::Int) = n * (n + 1) / N
+la(n::Int, N::Int) = 2 * n * (n + 1) / N
 
 """
     kernel(n, N, r, t)

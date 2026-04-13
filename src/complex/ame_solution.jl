@@ -23,8 +23,8 @@
 #
 # Both accept either a Dict{Int,Float64} degree distribution or a Graphs.jl
 # graph.  Reset protocols reuse the existing AbstractResetProtocol hierarchy:
-#   delta_reset(m)          – random-node reset to fixed magnetisation m
-#   random_node_reset(m)    – same (annealed; degrees not distinguished)
+#   delta_reset(m)          – fixed-m reset (annealed AME treats as random-node)
+#   random_node_reset(m)    – same effective AME closure as delta_reset(m)
 #   hub_reset(m)            – fill +1 from highest/lowest degree class first
 #
 # Requirements: DifferentialEquations.jl, NLsolve.jl

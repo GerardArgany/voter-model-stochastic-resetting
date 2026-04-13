@@ -34,8 +34,8 @@ result = simulate_pdf_all_to_all(params; reset, times, bins, nsamples, value_ran
        │      ├─ While current_time < target_time:
        │      │
        │      │  ├─ Compute total event rate:
-       │      │  │  ├─ voter_rate = 2·n·(N-n)/(N-1)
-       │      │  │  └─ total_rate = voter_rate + r
+      │      │  │  ├─ voter_rate = 2·n·(N-n)/(N-1)
+      │      │  │  └─ total_rate = voter_rate + r
        │      │  │
        │      │  ├─ Sample waiting time: dt ~ Exp(total_rate)
        │      │  │
@@ -48,7 +48,7 @@ result = simulate_pdf_all_to_all(params; reset, times, bins, nsamples, value_ran
        │      │     ├─ VOTER EVENT (prob = voter_rate / total_rate):
        │      │     │  └─ Flip one agent: n ← n ± 1 (equal probability)
        │      │     │
-       │      │     └─ RESET EVENT (prob = r / total_rate):
+         │      │     └─ RESET EVENT (prob = r / total_rate):
        │      │        └─ Call apply_all_to_all_reset(protocol, params, ...)
        │      │           └─ Dispatcher returns NEW n based on protocol:
        │      │              ├─ DeltaReset          → n = positive_count_from_magnetization(N, target_m)
@@ -157,7 +157,7 @@ result = simulate_pdf_complex(graph, params; reset, times, bins, nsamples, value
        │      │
        │      │  ├─ Compute total event rate:
        │      │  │  ├─ voter_rate = 2 × (# active edges)
-       │      │  │  └─ total_rate = voter_rate + r
+      │      │  │  └─ total_rate = voter_rate + r/N
        │      │  │
        │      │  ├─ Sample waiting time: dt ~ Exp(total_rate)
        │      │  │
@@ -181,7 +181,7 @@ result = simulate_pdf_complex(graph, params; reset, times, bins, nsamples, value
        │      │     │        └─ Use swap-and-pop for O(1) removal:
        │      │     │           (move last element, update pos_map, pop)
        │      │     │
-       │      │     └─ RESET EVENT (prob = r / total_rate):
+      │      │     └─ RESET EVENT (prob = (r/N) / total_rate):
        │      │        └─ apply_reset!(state, active_list, pos_map, ...)
        │      │           │
        │      │           ├─ If FixedResetPlan cached:
@@ -193,7 +193,7 @@ result = simulate_pdf_complex(graph, params; reset, times, bins, nsamples, value
        │      │              │  └─ Dispatcher returns NEW state based on protocol:
        │      │              │     ├─ DeltaReset       → random_exact_state() with fixed count
        │      │              │     ├─ HubReset         → [not for dynamic path, precomputed]
-       │      │              │     ├─ RandomNodeReset  → random_exact_state() with different random permutation
+      │      │              │     ├─ RandomNodeReset  → Bernoulli node-wise draw with p=(m+1)/2
        │      │              │     ├─ StateVectorReset → [not for dynamic path, precomputed]
        │      │              │     └─ FunctionalReset  → user-defined function
        │      │              │

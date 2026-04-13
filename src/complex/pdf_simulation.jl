@@ -285,12 +285,13 @@ end
 # Called only when fixed_reset_plan returned nothing (i.e. the reset target
 # is not fixed).  Returns the new node-state Vector{Int8}.
 
-# RandomNodeReset on a complex graph: random permutation so each reset
-# assigns +1 to a different random set of nodes (but always the right count).
+# RandomNodeReset on a complex graph: each node is sampled independently
+# with p=(m0+1)/2, so the total magnetization fluctuates around the target.
 function apply_dynamic_complex_reset(protocol::RandomNodeReset,
         graph::AbstractGraph, cache::ComplexGraphCache, params::ComplexParams,
         state::Vector{Int8}, current_time::Float64)
-    return random_exact_state(nv(graph), protocol.target_magnetization)
+    p = (1.0 + protocol.target_magnetization) / 2.0
+    return Int8[rand() < p ? Int8(1) : Int8(-1) for _ in 1:nv(graph)]
 end
 
 # FunctionalReset: call the user function; accept either a state vector or a
