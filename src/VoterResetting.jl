@@ -57,9 +57,14 @@ export simulate_degree_evolution_complex, simulate_sikm_pair_complex
 # FPT (first passage time to consensus)
 export first_passage_time_all_to_all, first_passage_time_complex
 
+# Discrete-time simulations (alternative to Gillespie)
+export simulate_pdf_discrete_complex, first_passage_time_discrete_complex
+export discrete_pdf_from_samples
+
 # Analytical all-to-all theory (analogous to Python voter_model package)
 export dist_laplace, sol_fpt, mean_fpt, variance_fpt
 export pip1, pim1, fk, sol
+export exact_mfpt_discrete_spectral
 # ------------------------------------------------------------------------------
 
 include("common/simulation_core.jl")
@@ -70,5 +75,6 @@ include("complex/pdf_simulation.jl")
 include("complex/sikm_simulation.jl")
 include("complex/fpt_simulation.jl")
 include("complex/ame_solution.jl")
+include("discrete_time_voter.jl")
 
 end

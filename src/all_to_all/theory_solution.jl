@@ -49,9 +49,9 @@ end
 """
     la(n, N)
 
-Relaxation rate `lambda_n = 2n(n+1)/N`.
+Relaxation rate `lambda_n = n(n+1)/N`.
 """
-la(n::Int, N::Int) = 2 * n * (n + 1) / N
+la(n::Int, N::Int) = n * (n + 1) / N
 
 """
     kernel(n, N, r, t)
@@ -247,4 +247,118 @@ function variance_fpt(N::Int, m0::Real, r::Real; M::Int=1000)
     second_moment = real_num / real_denom_sq
 
     return sqrt(second_moment - mean_val^2)
+end
+
+"""
+    exact_mfpt_discrete_spectral(N, n0, r; precision_bits=256, return_bigfloat=false)
+
+Exact discrete-time MFPT to consensus for the voter model on a complete graph,
+using the discrete spectral expansion (Eq. 15-18 in discrete_first_passage.pdf):
+
+    <T(n0)> = S_tilde^(1-r)(n0) / (1 - r * S_tilde^(1-r)(n0))
+
+with
+
+    S_tilde^(z)(n0) = (N-1) * sum_{k=2}^N [ d_k * (v_k[1] + v_k[N-1]) / (k(k-1)) ] * 1/(1 - z*lambda_k)
+
+and components
+
+    lambda_k = 1 - k(k-1)/(N(N-1))
+    d_k = [4(2k-1)/(k(k-1))] * [n0(N-n0)/N^2] * v_k[n0]
+    v_k[j] = sum_{i=max(j,k)}^N (-1)^(i-j) * binomial(i,j) * b_i^(k)
+
+The polynomial coefficients use Eq. 3 with the denominator typo corrected to
+`l(l-1) - k(k-1)` in the product.
+
+By default the computation runs in high precision (`BigFloat` with
+`precision_bits=256`) and returns `Float64`. Set `return_bigfloat=true` to
+return the high-precision value.
+"""
+function exact_mfpt_discrete_spectral(
+    N::Int,
+    n0::Int,
+    r::Real;
+    precision_bits::Int=256,
+    return_bigfloat::Bool=false,
+)
+    N >= 2 || throw(ArgumentError("N must be at least 2."))
+    1 <= n0 <= (N - 1) || throw(ArgumentError("n0 must satisfy 1 <= n0 <= N-1."))
+    precision_bits >= 64 || throw(ArgumentError("precision_bits must be at least 64."))
+
+    rf = Float64(r)
+    0.0 <= rf < 1.0 || throw(ArgumentError("r must satisfy 0 <= r < 1 for discrete-time resetting probability."))
+
+    return setprecision(precision_bits) do
+        T = BigFloat
+        oneT = one(T)
+        zeroT = zero(T)
+
+        N_T = T(N)
+        n0_T = T(n0)
+        r_T = T(rf)
+
+        z = oneT - r_T
+        n0_prefactor = (n0_T * (N_T - n0_T)) / (N_T^2)
+
+        # Build b_i^(k) for i = k..N via the recursive product in Eq. 3.
+        # Uses corrected denominator: l(l-1) - k(k-1).
+        function b_coeffs_for_k(k::Int)
+            b = zeros(T, N)
+            b[k] = oneT
+            prod_val = oneT
+            k_T = T(k)
+
+            for i in (k + 1):N
+                l_T = T(i)
+                num = (l_T - oneT) * (N_T - l_T + oneT)
+                den = (l_T * (l_T - oneT)) - (k_T * (k_T - oneT))
+                den == zeroT && throw(ArgumentError("Encountered zero denominator in b_i^(k) recursion."))
+                prod_val *= num / den
+                b[i] = prod_val
+            end
+
+            return b
+        end
+
+        # Eigenvector component v_k[j] from Eq. 11/12.
+        function v_component(k::Int, j::Int, b::Vector{T}) where {T<:AbstractFloat}
+            s = zero(T)
+            i_start = max(j, k)
+
+            for i in i_start:N
+                sign_term = isodd(i - j) ? -one(T) : one(T)
+                binom_ij = T(binomial(big(i), big(j)))
+                s += sign_term * binom_ij * b[i]
+            end
+
+            return s
+        end
+
+        s_tilde = zeroT
+
+        for k in 2:N
+            k_T = T(k)
+            kk1 = k_T * (k_T - oneT)
+            b = b_coeffs_for_k(k)
+
+            v_k_1 = v_component(k, 1, b)
+            v_k_nminus1 = v_component(k, N - 1, b)
+            v_k_n0 = v_component(k, n0, b)
+
+            lambda_k = oneT - kk1 / (N_T * (N_T - oneT))
+            d_k = (T(4) * (T(2k - 1)) / kk1) * n0_prefactor * v_k_n0
+
+            geom_denom = oneT - z * lambda_k
+            abs(geom_denom) > eps(T) || throw(ArgumentError("Singular term encountered: 1 - z*lambda_k is numerically zero."))
+
+            s_tilde += (d_k * (v_k_1 + v_k_nminus1) / kk1) / geom_denom
+        end
+
+        s_tilde *= T(N - 1)
+        mfpt_denom = oneT - r_T * s_tilde
+        abs(mfpt_denom) > eps(T) || throw(ArgumentError("MFPT denominator 1 - r*S_tilde is numerically zero."))
+
+        out = s_tilde / mfpt_denom
+        return return_bigfloat ? out : Float64(out)
+    end
 end
