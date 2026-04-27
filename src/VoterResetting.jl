@@ -32,6 +32,8 @@ module VoterResetting
 using Graphs      # AbstractGraph, nv, ne, edges, src, dst, degree, etc.
 using Random      # rand, randperm
 using Statistics  # mean, std
+using LinearAlgebra
+using LinearAlgebra  # qr, norm
 
 # ---- public API --------------------------------------------------------------
 # Types the caller needs for constructing inputs and reading outputs
@@ -65,6 +67,8 @@ export discrete_pdf_from_samples
 export dist_laplace, sol_fpt, mean_fpt, variance_fpt
 export pip1, pim1, fk, sol
 export exact_mfpt_discrete_spectral
+export optimal_return_rate_curve
+export section_vi_spectral_gap, section_vi_mfpt, section_vi_mfpt_vs_m0
 # ------------------------------------------------------------------------------
 
 include("common/simulation_core.jl")
@@ -75,6 +79,7 @@ include("complex/pdf_simulation.jl")
 include("complex/sikm_simulation.jl")
 include("complex/fpt_simulation.jl")
 include("complex/ame_solution.jl")
+include("complex/heterogeneous_spectral.jl")
 include("discrete_time_voter.jl")
 
 end

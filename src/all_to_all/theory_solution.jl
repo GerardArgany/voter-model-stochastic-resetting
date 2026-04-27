@@ -12,6 +12,14 @@
 #
 # =============================================================================
 
+try
+    using Roots
+catch
+    import Pkg
+    Pkg.add("Roots")
+    using Roots
+end
+
 # Gegenbauer polynomial C_n^(3/2)(x) by three-term recurrence.
 # This avoids adding a special-function dependency just for one polynomial family.
 function gegenbauer_c32(n::Int, x::Float64)
@@ -274,91 +282,306 @@ By default the computation runs in high precision (`BigFloat` with
 `precision_bits=256`) and returns `Float64`. Set `return_bigfloat=true` to
 return the high-precision value.
 """
+function _b_coefficients_for_k(::Type{T}, N::Int, k::Int) where {T<:AbstractFloat}
+    b_vals = zeros(T, N - k + 1)
+    b_vals[1] = one(T)  # b_k^(k) = 1
+    for i in (k + 1):N
+        num = T((i - 1) * (N - i + 1))
+        den = T(i * (i - 1) - k * (k - 1))
+        b_vals[i - k + 1] = b_vals[i - k] * (num / den)
+    end
+    return b_vals
+end
+
+@inline function _b_at_i(b_vals, k::Int, i::Int)
+    return i < k ? zero(eltype(b_vals)) : b_vals[i - k + 1]
+end
+
+function _v_component(::Type{T}, N::Int, k::Int, j::Int, b_vals) where {T<:AbstractFloat}
+    start_i = max(j, k)
+    s = zero(T)
+    for i in start_i:N
+        sign = isodd(i - j) ? -one(T) : one(T)
+        s += sign * T(binomial(big(i), big(j))) * _b_at_i(b_vals, k, i)
+    end
+    return s
+end
+
+function _boundary_bracket(::Type{T}, N::Int, k::Int, b_vals) where {T<:AbstractFloat}
+    b_nm1 = (N - 1) >= k ? _b_at_i(b_vals, k, N - 1) : zero(T)
+    b_n = _b_at_i(b_vals, k, N)
+
+    alt_sum = zero(T)
+    for i in k:N
+        sign = isodd(i - 1) ? -one(T) : one(T)
+        alt_sum += sign * T(i) * _b_at_i(b_vals, k, i)
+    end
+
+    return b_nm1 - T(N) * b_n + alt_sum
+end
+
+function _s_tilde_pdf_sum(::Type{T}, N::Int, n0::Int, r::Real) where {T<:AbstractFloat}
+    oneT = one(T)
+    rT = T(r)
+    zT = oneT - rT
+    n0_pref = T(n0 * (N - n0)) / (T(N)^2)
+
+    s_tilde = zero(T)
+    for k in 2:N
+        kk1 = T(k * (k - 1))
+        lambda_k = oneT - kk1 / T(N * (N - 1))
+
+        b_vals = _b_coefficients_for_k(T, N, k)
+        vkn0 = _v_component(T, N, k, n0, b_vals)
+        dk = (T(4) * T(2 * k - 1) / kk1) * n0_pref * vkn0
+
+        bracket = _boundary_bracket(T, N, k, b_vals)
+        denom = kk1 * (oneT - zT * lambda_k)
+        s_tilde += T(N - 1) * dk * bracket / denom
+    end
+    return s_tilde
+end
+
+const _all_to_all_spectral_cache = Dict{Int, NamedTuple{(:eigvals, :coeffs_by_n0), Tuple{Vector{Float64}, Matrix{Float64}}}}()
+
+function _build_all_to_all_spectral_cache(N::Int)
+    ntrans = N - 1
+    Q = zeros(Float64, ntrans, ntrans)
+
+    for n in 1:ntrans
+        a = (n * (N - n)) / (N * (N - 1))
+        Q[n, n] = 1 - 2a
+        if n < ntrans
+            Q[n, n + 1] = a
+        end
+        if n > 1
+            Q[n, n - 1] = a
+        end
+    end
+
+    pi = [1.0 / (n * (N - n)) for n in 1:ntrans]
+    d = sqrt.(pi)
+    dinv = 1.0 ./ d
+    S = Diagonal(d) * Q * Diagonal(dinv)
+    eig = eigen(Symmetric(S))
+    U = eig.vectors
+    eigvals = Vector{Float64}(eig.values)
+
+    coeffs_by_n0 = Matrix{Float64}(undef, ntrans, ntrans)
+    beta = transpose(U) * d
+    for n0 in 1:ntrans
+        coeffs_by_n0[:, n0] = (U[n0, :] ./ d[n0]) .* beta
+    end
+
+    return (eigvals = eigvals, coeffs_by_n0 = coeffs_by_n0)
+end
+
+"""
+    exact_mfpt_discrete_spectral(N, n0, r; precision_bits=256, return_bigfloat=false)
+
+Exact MFPT for the discrete-time complete-graph voter model with resetting,
+evaluated from the exact spectral decomposition of the transient no-reset kernel.
+
+This uses the reversible similarity transform of the transient transition matrix,
+so the coefficients are normalized by construction and satisfy the required
+`S_tilde(z=0) = 1` identity.
+"""
 function exact_mfpt_discrete_spectral(
     N::Int,
     n0::Int,
     r::Real;
     precision_bits::Int=256,
     return_bigfloat::Bool=false,
+    check_consistency::Bool=true,
 )
     N >= 2 || throw(ArgumentError("N must be at least 2."))
     1 <= n0 <= (N - 1) || throw(ArgumentError("n0 must satisfy 1 <= n0 <= N-1."))
     precision_bits >= 64 || throw(ArgumentError("precision_bits must be at least 64."))
 
     rf = Float64(r)
-    0.0 <= rf < 1.0 || throw(ArgumentError("r must satisfy 0 <= r < 1 for discrete-time resetting probability."))
+    rf >= 0.0 || throw(ArgumentError("r must satisfy r >= 0."))
+    r_eff = rf / N
+    0.0 <= r_eff < 1.0 || throw(ArgumentError("Effective reset probability r/N must satisfy 0 <= r/N < 1."))
 
-    return setprecision(precision_bits) do
-        T = BigFloat
-        oneT = one(T)
-        zeroT = zero(T)
-
-        N_T = T(N)
-        n0_T = T(n0)
-        r_T = T(rf)
-
-        z = oneT - r_T
-        n0_prefactor = (n0_T * (N_T - n0_T)) / (N_T^2)
-
-        # Build b_i^(k) for i = k..N via the recursive product in Eq. 3.
-        # Uses corrected denominator: l(l-1) - k(k-1).
-        function b_coeffs_for_k(k::Int)
-            b = zeros(T, N)
-            b[k] = oneT
-            prod_val = oneT
-            k_T = T(k)
-
-            for i in (k + 1):N
-                l_T = T(i)
-                num = (l_T - oneT) * (N_T - l_T + oneT)
-                den = (l_T * (l_T - oneT)) - (k_T * (k_T - oneT))
-                den == zeroT && throw(ArgumentError("Encountered zero denominator in b_i^(k) recursion."))
-                prod_val *= num / den
-                b[i] = prod_val
-            end
-
-            return b
-        end
-
-        # Eigenvector component v_k[j] from Eq. 11/12.
-        function v_component(k::Int, j::Int, b::Vector{T}) where {T<:AbstractFloat}
-            s = zero(T)
-            i_start = max(j, k)
-
-            for i in i_start:N
-                sign_term = isodd(i - j) ? -one(T) : one(T)
-                binom_ij = T(binomial(big(i), big(j)))
-                s += sign_term * binom_ij * b[i]
-            end
-
-            return s
-        end
-
-        s_tilde = zeroT
-
-        for k in 2:N
-            k_T = T(k)
-            kk1 = k_T * (k_T - oneT)
-            b = b_coeffs_for_k(k)
-
-            v_k_1 = v_component(k, 1, b)
-            v_k_nminus1 = v_component(k, N - 1, b)
-            v_k_n0 = v_component(k, n0, b)
-
-            lambda_k = oneT - kk1 / (N_T * (N_T - oneT))
-            d_k = (T(4) * (T(2k - 1)) / kk1) * n0_prefactor * v_k_n0
-
-            geom_denom = oneT - z * lambda_k
-            abs(geom_denom) > eps(T) || throw(ArgumentError("Singular term encountered: 1 - z*lambda_k is numerically zero."))
-
-            s_tilde += (d_k * (v_k_1 + v_k_nminus1) / kk1) / geom_denom
-        end
-
-        s_tilde *= T(N - 1)
-        mfpt_denom = oneT - r_T * s_tilde
-        abs(mfpt_denom) > eps(T) || throw(ArgumentError("MFPT denominator 1 - r*S_tilde is numerically zero."))
-
-        out = s_tilde / mfpt_denom
-        return return_bigfloat ? out : Float64(out)
+    cache = get!(_all_to_all_spectral_cache, N) do
+        _build_all_to_all_spectral_cache(N)
     end
+
+    eigvals = cache.eigvals
+    coeffs = view(cache.coeffs_by_n0, :, n0)
+
+    if check_consistency
+        s0 = sum(coeffs)
+        abs(s0 - 1.0) <= 1e-10 || throw(ArgumentError("Spectral coefficient normalization failed: sum(coeffs)=$(s0), expected 1."))
+    end
+
+    if return_bigfloat || precision_bits > 64
+        return setprecision(precision_bits) do
+            T = BigFloat
+            oneT = one(T)
+            zT = oneT - T(r_eff)
+            rT = T(r_eff)
+
+            s_tilde = zero(T)
+            for i in eachindex(eigvals)
+                s_tilde += T(coeffs[i]) / (oneT - zT * T(eigvals[i]))
+            end
+
+            mfpt_denom = oneT - rT * s_tilde
+            out = s_tilde / mfpt_denom
+            return return_bigfloat ? out : Float64(out)
+        end
+    else
+        z = 1.0 - r_eff
+        s_tilde = 0.0
+        for i in eachindex(eigvals)
+            s_tilde += coeffs[i] / (1.0 - z * eigvals[i])
+        end
+
+        mfpt_denom = 1.0 - r_eff * s_tilde
+        return s_tilde / mfpt_denom
+    end
+end
+
+const _optimal_return_rate_cache = Dict{Int, NamedTuple{(:choose, :b, :v, :lambda, :boundary_weight, :base_weight), Tuple{Matrix{BigFloat}, Matrix{BigFloat}, Matrix{BigFloat}, Vector{BigFloat}, Vector{BigFloat}, Vector{BigFloat}}}}()
+
+function _build_optimal_return_rate_cache(N::Int)
+    choose = zeros(BigFloat, N + 1, N + 1)
+    choose[1, 1] = 1
+    for i in 1:N
+        choose[i + 1, 1] = 1
+        choose[i + 1, i + 1] = 1
+        for j in 1:(i - 1)
+            choose[i + 1, j + 1] = choose[i, j] + choose[i, j + 1]
+        end
+    end
+
+    b = zeros(BigFloat, N + 1, N + 1)
+    for k in 2:N
+        b[k, k] = 1
+        for i in (k + 1):N
+            num = BigFloat((i - 1) * (N - i + 1))
+            den = BigFloat(i * (i - 1) - k * (k - 1))
+            b[k, i] = b[k, i - 1] * (num / den)
+        end
+    end
+
+    v = zeros(BigFloat, N + 1, N + 1)
+    for k in 2:N
+        for j in 1:(N - 1)
+            start_i = max(j, k)
+            s = zero(BigFloat)
+            for i in start_i:N
+                sign = isodd(i - j) ? -one(BigFloat) : one(BigFloat)
+                s += sign * choose[i + 1, j + 1] * b[k, i]
+            end
+            v[k, j] = s
+        end
+    end
+
+    lambda = zeros(BigFloat, N + 1)
+    boundary_weight = zeros(BigFloat, N + 1)
+    base_weight = zeros(BigFloat, N + 1)
+    for k in 2:N
+        kk1 = BigFloat(k * (k - 1))
+        lambda[k] = one(BigFloat) - kk1 / BigFloat(N * (N - 1))
+        boundary_weight[k] = v[k, 1] + v[k, N - 1]
+        base_weight[k] = BigFloat(N - 1) * BigFloat(4) * BigFloat(2 * k - 1) * boundary_weight[k] / (kk1^2)
+    end
+
+    return (choose = choose, b = b, v = v, lambda = lambda, boundary_weight = boundary_weight, base_weight = base_weight)
+end
+
+function _optimal_return_rate_coeffs_for_n0(cache, N::Int, n0::Int)
+    coeffs = zeros(BigFloat, N + 1)
+    ratio = BigFloat(n0 * (N - n0)) / BigFloat(N^2)
+    for k in 2:N
+        coeffs[k] = cache.base_weight[k] * ratio * cache.v[k, n0]
+    end
+    return coeffs
+end
+
+function _optimal_return_rate_s_tilde_and_derivative(z::Real, coeffs::AbstractVector, lambda::AbstractVector, N::Int)
+    zT = BigFloat(z)
+    s = zero(BigFloat)
+    ds = zero(BigFloat)
+    for k in 2:N
+        denom = one(BigFloat) - zT * lambda[k]
+        ck = coeffs[k]
+        s += ck / denom
+        ds += ck * lambda[k] / (denom^2)
+    end
+    return s, ds
+end
+
+_optimal_return_rate_function(z, coeffs, lambda, N) = begin
+    s, ds = _optimal_return_rate_s_tilde_and_derivative(z, coeffs, lambda, N)
+    s^2 - ds
+end
+
+function _find_optimal_z(coeffs, lambda, N; zmin::Float64 = 0.5, zmax::Float64 = 1.0, ngrid::Int = 800, root_tol::Real = 1e-12)
+    grid = collect(range(zmin, zmax, length = ngrid))
+    values = [Float64(_optimal_return_rate_function(z, coeffs, lambda, N)) for z in grid]
+
+    if abs(values[end]) <= root_tol
+        return grid[end]
+    end
+
+    for i in (length(grid) - 1):-1:1
+        f1 = values[i]
+        f2 = values[i + 1]
+        if !isfinite(f1) || !isfinite(f2)
+            continue
+        end
+        if abs(f1) <= root_tol
+            return grid[i]
+        elseif f1 * f2 < 0
+            f(z) = Float64(_optimal_return_rate_function(z, coeffs, lambda, N))
+            return find_zero(f, (grid[i], grid[i + 1]), Bisection(); atol = root_tol, rtol = root_tol)
+        end
+    end
+
+    return nothing
+end
+
+"""
+    optimal_return_rate_curve(N; zmin=0.5, zmax=1.0, ngrid=800, root_tol=1e-12)
+
+Compute the theoretical optimal return rate r*(m0) for the discrete voter model
+on a complete graph of size N.
+
+The returned tuple is `(m0_values, r_star, root_found)` where `m0_values` are
+the magnetizations `m0 = 2n0/N - 1`, `r_star` is the minimizing return rate,
+and `root_found` marks whether a nonzero interior root was detected.
+
+If the optimality condition has no root in `(0, 1]`, the corresponding value
+is set to `r* = 0`.
+"""
+function optimal_return_rate_curve(N::Int; zmin::Float64 = 0.5, zmax::Float64 = 1.0, ngrid::Int = 800, root_tol::Real = 1e-12)
+    N >= 2 || throw(ArgumentError("N must be at least 2."))
+
+    cache = get!(_optimal_return_rate_cache, N) do
+        _build_optimal_return_rate_cache(N)
+    end
+
+    n0_values = 1:(N - 1)
+    m0_values = [2.0 * n0 / N - 1.0 for n0 in n0_values]
+    r_star = zeros(Float64, length(n0_values))
+    root_found = falses(length(n0_values))
+
+    for (idx, n0) in enumerate(n0_values)
+        coeffs = _optimal_return_rate_coeffs_for_n0(cache, N, n0)
+        z_star = _find_optimal_z(coeffs, cache.lambda, N; zmin = zmin, zmax = zmax, ngrid = ngrid, root_tol = root_tol)
+
+        if z_star === nothing
+            r_star[idx] = 0.0
+            root_found[idx] = false
+        else
+            r_val = max(0.0, 1.0 - Float64(z_star))
+            r_star[idx] = r_val
+            root_found[idx] = r_val > root_tol
+        end
+    end
+
+    return m0_values, r_star, root_found
 end
