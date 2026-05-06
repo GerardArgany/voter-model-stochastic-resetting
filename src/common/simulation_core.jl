@@ -177,11 +177,10 @@ end
 # Section 4 – Resetting-protocol concrete types
 # -----------------------------------------------------------------------------
 
-# DeltaReset: the system is reset to a *fixed* magnetization target_magnetization.
+# DeltaReset: a reset-law over magnetization that fixes the target value.
 #   All-to-all: n_+ is set to round(N*(target+1)/2), same every time.
-#   Complex:    nodes are assigned +1/-1 randomly but with the exact right
-#               count (a random permutation of the fixed-m state) unless
-#               HubReset is used instead (see below).
+#   Complex:    this specifies the magnetization target; the node-placement
+#               protocol decides how the +1 nodes are arranged.
 struct DeltaReset <: AbstractResetProtocol
     target_magnetization::Float64
 end
@@ -194,26 +193,25 @@ struct StateVectorReset <: AbstractResetProtocol
     state::Vector{Int8}   # one Int8 per node, values ∈ {-1, +1}
 end
 
-# UniformMagnetizationReset: at each reset event the target magnetization is
-#   drawn uniformly from the full range of possible values.  For all-to-all
-#   this means n_+ is drawn uniformly from {0, 1, …, N}.  Not yet implemented
-#   for complex networks.
+# UniformMagnetizationReset: reset-law that draws the magnetization target
+#   uniformly from the admissible range.  For all-to-all this means n_+
+#   is drawn uniformly from {0, 1, …, N}.  Not yet implemented for complex
+#   networks because a node-placement protocol is also required there.
 struct UniformMagnetizationReset <: AbstractResetProtocol end
 
-# RandomNodeReset: the system is reset to a random node configuration whose
-#   *expected* magnetization equals target_magnetization.  Each node is
-#   independently set to +1 with probability p = (target+1)/2.  Unlike
-#   DeltaReset the resulting magnetization varies from reset to reset.
+# RandomNodeReset: node-placement protocol for complex networks.
+#   Each node is independently set to +1 with probability p = (target+1)/2,
+#   so the resulting magnetization fluctuates around the requested target.
 struct RandomNodeReset <: AbstractResetProtocol
     target_magnetization::Float64
 end
 
-# HubReset: the system is reset to a fixed configuration chosen by *degree*.
+# HubReset: node-placement protocol for complex networks.
 #   The round(N*(target+1)/2) nodes with the highest degrees are set to +1
 #   (highest_first=true, the default), or the lowest-degree nodes (false).
 #   This is the protocol studied in the complex-network theory documents;
 #   it is the only protocol for which the reset state is precomputed and
-#   cached for speed, because the reset target never changes.
+#   cached for speed, because the placement rule never changes.
 struct HubReset <: AbstractResetProtocol
     target_magnetization::Float64
     highest_first::Bool        # true → hubs are +1 at reset, false → hubs are -1

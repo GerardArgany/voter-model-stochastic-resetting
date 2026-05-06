@@ -161,7 +161,9 @@ function _hub_reset_state(ind::AMEIndexer, Pk::Dict{Int,Float64},
     return x_reset
 end
 
-# Dispatch on AbstractResetProtocol
+# Dispatch on reset-law / node-placement inputs.
+# The AME closure only needs the expected magnetization for DeltaReset and
+# RandomNodeReset; HubReset is distinct because the degree placement matters.
 function _build_ame_reset_state(ind::AMEIndexer, Pk::Dict{Int,Float64},
         protocol::Union{DeltaReset, RandomNodeReset})
     rho_reset = (1.0 + protocol.target_magnetization) / 2.0

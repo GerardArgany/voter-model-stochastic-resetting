@@ -7,9 +7,9 @@
 # a reduced Markov operator over alpha_k counts.
 #
 # Public entry points:
-#   - section_vi_spectral_gap(graph)
-#   - section_vi_mfpt(graph, m0; r=0.0)
-#   - section_vi_mfpt_vs_m0(graph; m0_values, r=0.0)
+#   - complex_spectral_gap(graph)
+#   - complex_mfpt(graph, m0; r=0.0)
+#   - complex_mfpt_vs_m0(graph; m0_values, r=0.0)
 #
 # Notes:
 #   - The user-facing reset parameter r is mapped internally to an effective
@@ -159,14 +159,14 @@ function _w_from_m0(Wmax::Int, m0::Real)
 end
 
 """
-    section_vi_spectral_gap(graph; max_states=200_000, maxiter=5_000, tol=1e-11)
+    complex_spectral_gap(graph; max_states=200_000, maxiter=5_000, tol=1e-11)
 
 Compute the reduced Section VI spectral summary for an uncorrelated heterogeneous
 network approximation.
 
 Returns a NamedTuple with degree moments and dominant transient eigenvalue.
 """
-function section_vi_spectral_gap(
+function complex_spectral_gap(
     graph::AbstractGraph;
     max_states::Int=200_000,
     maxiter::Int=5_000,
@@ -195,15 +195,15 @@ function section_vi_spectral_gap(
 end
 
 """
-    section_vi_mfpt(graph, m0; r=0.0, max_states=200_000)
+    complex_mfpt(graph, m0; r=0.0, max_states=200_000)
 
 Mean first-passage time from the Section VI reduced spectral operator.
 
 - `m0` sets the reset/initial degree-class occupancy by alpha_k = round(N_k*(1+m0)/2).
-- User-facing `r` is converted to `r_eff = r/N`, then
-    MFPT = S_tilde(1-r_eff) / (1 - r_eff*S_tilde(1-r_eff)).
+- For discrete-time simulations, `r` is the per-step reset probability (already scaled correctly, used directly without N normalization).
+- Formula: MFPT = S_tilde(1-r) / (1 - r*S_tilde(1-r)) where S_tilde is the survival generating vector.
 """
-function section_vi_mfpt(
+function complex_mfpt(
     graph::AbstractGraph,
     m0::Real;
     r::Real=0.0,
@@ -213,8 +213,8 @@ function section_vi_mfpt(
         rf >= 0.0 || throw(ArgumentError("r must satisfy r >= 0."))
 
     cache = _get_section_vi_cache(graph; max_states=max_states)
-    r_eff = rf / cache.N
-    0.0 <= r_eff < 1.0 || throw(ArgumentError("Effective reset probability r/N must satisfy 0 <= r/N < 1."))
+    r_eff = rf
+    0.0 <= r_eff < 1.0 || throw(ArgumentError("Reset probability r must satisfy 0 <= r < 1."))
 
     w0 = _w_from_m0(cache.Wmax, m0)
 
@@ -229,17 +229,18 @@ function section_vi_mfpt(
     s_vec = _survival_generating_vector(cache.Q, z)
     s = s_vec[idx0]
 
-    return r_eff == 0.0 ? s : s / (1.0 - r_eff * s)
+    result = r_eff == 0.0 ? s : s / (1.0 - r_eff * s)
+    return result / cache.N
 end
 
 """
-    section_vi_mfpt_vs_m0(graph; m0_values=range(-0.9, 0.9, length=31), r=0.0, max_states=200_000)
+    complex_mfpt_vs_m0(graph; m0_values=range(-0.9, 0.9, length=31), r=0.0, max_states=200_000)
 
 Compute Section VI reduced spectral MFPT for a sweep of initial magnetizations.
 
-User-facing `r` is converted internally to `r_eff = r/N`.
+For discrete-time simulations, `r` is the per-step reset probability (used directly, no N scaling).
 """
-function section_vi_mfpt_vs_m0(
+function complex_mfpt_vs_m0(
     graph::AbstractGraph;
     m0_values=collect(range(-0.9, 0.9, length=31)),
     r::Real=0.0,
@@ -249,8 +250,8 @@ function section_vi_mfpt_vs_m0(
     rf >= 0.0 || throw(ArgumentError("r must satisfy r >= 0."))
 
     cache = _get_section_vi_cache(graph; max_states=max_states)
-    r_eff = rf / cache.N
-    0.0 <= r_eff < 1.0 || throw(ArgumentError("Effective reset probability r/N must satisfy 0 <= r/N < 1."))
+    r_eff = rf
+    0.0 <= r_eff < 1.0 || throw(ArgumentError("Reset probability r must satisfy 0 <= r < 1."))
 
     z = 1.0 - r_eff
     s_vec = _survival_generating_vector(cache.Q, z)
@@ -268,7 +269,8 @@ function section_vi_mfpt_vs_m0(
         idx0 = w0
 
         s = s_vec[idx0]
-        mfpt_vals[i] = r_eff == 0.0 ? s : s / (1.0 - r_eff * s)
+        result = r_eff == 0.0 ? s : s / (1.0 - r_eff * s)
+        mfpt_vals[i] = result / cache.N
     end
 
     return (

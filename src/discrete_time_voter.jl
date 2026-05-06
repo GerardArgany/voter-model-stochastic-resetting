@@ -151,6 +151,102 @@ function simulate_pdf_discrete_complex(graph::AbstractGraph, params,
 end
 
 """
+    simulate_phase_space_discrete_complex(graph::AbstractGraph, n_positive::Int,
+                                          r::Real, nsteps::Int;
+                                          seed::Union{Nothing,Int}=nothing,
+                                          reset::AbstractResetProtocol=delta_reset(0.0))
+
+Simulate one discrete-time voter-model trajectory on a complex network and
+return the active-link density ρ and magnetization m at each step.
+
+Here ρ is the fraction of active edges, so it is generally nonlinear in m.
+"""
+function simulate_phase_space_discrete_complex(graph::AbstractGraph,
+        n_positive::Int, r::Real, nsteps::Int;
+        seed::Union{Nothing,Int}=nothing,
+        reset::AbstractResetProtocol = delta_reset(0.0))
+
+    N = nv(graph)
+    M = ne(graph)
+    M > 0 || throw(ArgumentError("Graph must have at least one edge"))
+    1 <= n_positive <= N - 1 || throw(ArgumentError("n_positive must be in 1:(N-1)"))
+    0.0 <= r <= 1.0 || throw(ArgumentError("r must be in [0, 1]"))
+
+    seed === nothing || Random.seed!(seed)
+
+    cache = build_graph_cache(graph)
+
+    state = fill(Int8(-1), N)
+    ordering = randperm(N)
+    for idx in 1:n_positive
+        state[ordering[idx]] = Int8(1)
+    end
+
+    active_list = active_edge_ids_from_state(cache, state)
+    pos_map = zeros(Int, M)
+    rebuild_active_structures!(active_list, pos_map, copy(active_list))
+
+    reset_state_cached = nothing
+    if reset isa DeltaReset
+        m_reset = reset.target_magnetization
+        n_reset = Int(round(N * (1.0 + m_reset) / 2.0))
+        reset_state_cached = fill(Int8(-1), N)
+        if n_reset > 0
+            reset_ordering = randperm(N)
+            for idx in 1:n_reset
+                reset_state_cached[reset_ordering[idx]] = Int8(1)
+            end
+        end
+    elseif reset isa StateVectorReset
+        reset_state_cached = copy(reset.state)
+    end
+
+    rho = Vector{Float64}(undef, nsteps + 1)
+    magnetization = Vector{Float64}(undef, nsteps + 1)
+
+    n_plus = n_positive
+    rho[1] = isempty(active_list) ? 0.0 : length(active_list) / M
+    magnetization[1] = (2.0 * n_plus - N) / N
+
+    for step in 2:(nsteps + 1)
+        if rand() < r
+            if !isnothing(reset_state_cached)
+                state .= reset_state_cached
+                n_plus = count(==(Int8(1)), reset_state_cached)
+            else
+                fill!(state, Int8(-1))
+                reset_ordering = randperm(N)
+                for idx in 1:n_positive
+                    state[reset_ordering[idx]] = Int8(1)
+                end
+                n_plus = n_positive
+            end
+
+            active_list = active_edge_ids_from_state(cache, state)
+            rebuild_active_structures!(active_list, pos_map, copy(active_list))
+
+        elseif !isempty(active_list)
+            edge_id = active_list[rand(1:length(active_list))]
+            u = cache.edge_u[edge_id]
+            v = cache.edge_v[edge_id]
+            flipped_node = rand(Bool) ? u : v
+            source_node = flipped_node == u ? v : u
+
+            if state[flipped_node] != state[source_node]
+                state[flipped_node] = state[source_node]
+                n_plus += state[flipped_node] == Int8(1) ? 1 : -1
+                update_incident_edges!(active_list, pos_map, cache, state, flipped_node)
+            end
+        end
+
+        rho[step] = isempty(active_list) ? 0.0 : length(active_list) / M
+        magnetization[step] = (2.0 * n_plus - N) / N
+    end
+
+    return (; rho = rho, m = magnetization)
+end
+
+"""
     first_passage_time_discrete_complex(graph::AbstractGraph, params;
                                         consensus_type=:either, nsamples=1000,
                                         max_steps=10000, reset::AbstractResetProtocol)
@@ -161,8 +257,8 @@ Runs nsamples trajectories until consensus is reached (all +1, all -1, or either
 Returns vector of FPT for each sample.
 """
 function first_passage_time_discrete_complex(graph::AbstractGraph, params;
-        consensus_type=:either, nsamples=1000, max_steps=10000,
-        reset::AbstractResetProtocol)
+    consensus_type=:either, nsamples=1000, max_steps=10000,
+    reset::AbstractResetProtocol, wait_for_consensus::Bool = true, censor_value = NaN)
     
     N = nv(graph)
     M = ne(graph)
@@ -192,21 +288,25 @@ function first_passage_time_discrete_complex(graph::AbstractGraph, params;
         pos_map = zeros(Int, M)
         rebuild_active_structures!(active_list, pos_map, copy(active_list))
         
+        reached = false
         for step in 1:max_steps
             # Check stopping condition
             n_plus = count(==(Int8(1)), state)
-            
+
             if consensus_type == :positive && n_plus == N
                 push!(fpt_samples, float(step))
+                reached = true
                 break
             elseif consensus_type == :negative && n_plus == 0
                 push!(fpt_samples, float(step))
+                reached = true
                 break
             elseif consensus_type == :either && (n_plus == 0 || n_plus == N)
                 push!(fpt_samples, float(step))
+                reached = true
                 break
             end
-            
+
             # Discrete time step
             if rand() < params.r
                 # Reset
@@ -225,6 +325,47 @@ function first_passage_time_discrete_complex(graph::AbstractGraph, params;
                 flipped_node = rand(Bool) ? u : v
                 state[flipped_node] = state[u == flipped_node ? v : u]
                 update_incident_edges!(active_list, pos_map, cache, state, flipped_node)
+            end
+        end
+
+        if !reached
+            if wait_for_consensus
+                # Continue until absorption (user explicitly requested to wait)
+                step = max_steps
+                while true
+                    step += 1
+                    n_plus = count(==(Int8(1)), state)
+                    if consensus_type == :positive && n_plus == N
+                        push!(fpt_samples, float(step))
+                        break
+                    elseif consensus_type == :negative && n_plus == 0
+                        push!(fpt_samples, float(step))
+                        break
+                    elseif consensus_type == :either && (n_plus == 0 || n_plus == N)
+                        push!(fpt_samples, float(step))
+                        break
+                    end
+
+                    if rand() < params.r
+                        if !isnothing(reset_state_cached)
+                            state .= reset_state_cached
+                        else
+                            state = random_spin_state(N, params.m0)
+                        end
+                        active_list = active_edge_ids_from_state(cache, state)
+                        rebuild_active_structures!(active_list, pos_map, copy(active_list))
+                    elseif !isempty(active_list)
+                        edge_id = active_list[rand(1:length(active_list))]
+                        u = cache.edge_u[edge_id]
+                        v = cache.edge_v[edge_id]
+                        flipped_node = rand(Bool) ? u : v
+                        state[flipped_node] = state[u == flipped_node ? v : u]
+                        update_incident_edges!(active_list, pos_map, cache, state, flipped_node)
+                    end
+                end
+            else
+                # Censor this sample with the provided censor_value (default NaN)
+                push!(fpt_samples, float(censor_value))
             end
         end
     end

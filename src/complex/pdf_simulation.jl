@@ -247,9 +247,9 @@ end
 # Reset plan helpers
 # -----------------------------------------------------------------------------
 #
-# fixed_reset_plan: decide at construction time whether a given protocol has
-# a time-independent reset target.  If yes, return a FixedResetPlan with
-# the state and active-edge list precomputed.  If no, return nothing and
+# fixed_reset_plan: decide at construction time whether a given node-placement
+# protocol has a time-independent reset state.  If yes, return a FixedResetPlan
+# with the state and active-edge list precomputed.  If no, return nothing and
 # let apply_reset! recompute the new state stochastically at each event.
 
 # HubReset: reset state is fixed (determined by degree order) → precompute.
@@ -270,8 +270,8 @@ end
 fixed_reset_plan(cache::ComplexGraphCache, protocol::AbstractResetProtocol, params::ComplexParams) = nothing
 
 # random_exact_state: choose a random permutation of the nodes and assign +1
-# to the first `cutoff` of them.  Used by DeltaReset and RandomNodeReset on
-# complex networks where the specific node identities matter (unlike all-to-all).
+# to the first `cutoff` of them.  This is the natural realization of a delta-
+# magnetization law on a complex network when the node identities are not fixed.
 function random_exact_state(N::Integer, m0::Real)
     ordering = randperm(N)  # random permutation of 1:N
     return exact_magnetization_state(ordering, N, m0)
@@ -285,8 +285,9 @@ end
 # Called only when fixed_reset_plan returned nothing (i.e. the reset target
 # is not fixed).  Returns the new node-state Vector{Int8}.
 
-# RandomNodeReset on a complex graph: each node is sampled independently
-# with p=(m0+1)/2, so the total magnetization fluctuates around the target.
+# RandomNodeReset on a complex graph: node-placement protocol where each node
+# is sampled independently with p=(m0+1)/2, so the total magnetization
+# fluctuates around the requested target.
 function apply_dynamic_complex_reset(protocol::RandomNodeReset,
         graph::AbstractGraph, cache::ComplexGraphCache, params::ComplexParams,
         state::Vector{Int8}, current_time::Float64)
@@ -310,8 +311,8 @@ function apply_dynamic_complex_reset(protocol::FunctionalReset,
     throw(ArgumentError("Custom complex-network reset functions must return either a state vector or a magnetization."))
 end
 
-# DeltaReset on a complex graph: the magnetization is fixed but the specific
-# nodes that are +1 are re-randomized at each reset event (unlike HubReset).
+# DeltaReset on a complex graph: a delta magnetization law.  The target is
+# fixed, but the specific +1 nodes are re-randomized at each reset event.
 # If you want the same nodes every time, use hub_reset or a StateVectorReset.
 function apply_dynamic_complex_reset(protocol::DeltaReset,
         graph::AbstractGraph, cache::ComplexGraphCache, params::ComplexParams,

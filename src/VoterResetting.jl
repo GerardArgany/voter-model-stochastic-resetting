@@ -60,7 +60,8 @@ export simulate_degree_evolution_complex, simulate_sikm_pair_complex
 export first_passage_time_all_to_all, first_passage_time_complex
 
 # Discrete-time simulations (alternative to Gillespie)
-export simulate_pdf_discrete_complex, first_passage_time_discrete_complex
+export simulate_trajectory_discrete_all_to_all, simulate_pdf_discrete_all_to_all, simulate_fpt_discrete_all_to_all
+export simulate_phase_space_discrete_complex, simulate_pdf_discrete_complex, first_passage_time_discrete_complex
 export discrete_pdf_from_samples
 
 # Analytical all-to-all theory (analogous to Python voter_model package)
@@ -68,13 +69,14 @@ export dist_laplace, sol_fpt, mean_fpt, variance_fpt
 export pip1, pim1, fk, sol
 export exact_mfpt_discrete_spectral
 export optimal_return_rate_curve
-export section_vi_spectral_gap, section_vi_mfpt, section_vi_mfpt_vs_m0
+export complex_spectral_gap, complex_mfpt, complex_mfpt_vs_m0
 # ------------------------------------------------------------------------------
 
 include("common/simulation_core.jl")
 include("all_to_all/pdf_simulation.jl")
 include("all_to_all/fpt_simulation.jl")
 include("all_to_all/theory_solution.jl")
+include("all_to_all/discrete_simulation.jl")
 include("complex/pdf_simulation.jl")
 include("complex/sikm_simulation.jl")
 include("complex/fpt_simulation.jl")
